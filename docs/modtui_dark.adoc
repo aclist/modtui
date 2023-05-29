@@ -255,7 +255,7 @@ Use `C-q/C-c/Esc` to quit.
 
 Use `C-e` to edit the note metadata on the currently focused mod.
 
-Use `C-t` to add a named separator above the current row. Like mods, separators can be moved in the list.
+Use `C-t` to add a named separator above the current row. Like mods, separators can be moved in the list; use `C-d` to delete a separator.
 
 Use `C-e` to edit the mod's human-readable name or add parenthetical remarks.
 
