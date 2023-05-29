@@ -1,0 +1,10 @@
+#!/bin/bash
+case $3 in
+	silent)
+		printf "[%s] %s\n" "$1" "$2" >> "$modtui_log"
+		
+		;;
+	loud)
+		printf "[%s] %s\n" "$1" "$2" | tee -a "$modtui_log"
+		;;
+esac

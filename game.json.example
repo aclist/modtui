@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "tool": "modTUI",
+    "version": "0.1.0",
+    "date": "1685297302"
+  },
+  "mods": [
+    {
+      "name": "My mods",
+      "type": "separator",
+      "state": "disabled"
+    },
+    {
+      "name": "Anomaly Headlamp",
+      "type": "mod",
+      "state": "enabled",
+      "dir": "anomaly-headlamp",
+      "author": "Celestrilia",
+      "entry_point": [
+        "gamedata"
+      ],
+      "dl_url": "https://www.moddb.com/addons/start/24176",
+      "human_url": "https://www.moddb.com/mods/stalker-anomaly/addons/headlamp-reanimation",
+      "notes": ""
+    },
+    {
+      "name": "AutumnNoLeaves LOD",
+      "type": "mod",
+      "state": "enabled",
+      "dir": "AutumnNoLeaves_LOD",
+      "author": "Daedalus-Prime",
+      "entry_point": [],
+      "dl_url": "https://www.moddb.com/addons/start/241901",
+      "human_url": "https://www.moddb.com/mods/stalker-anomaly/addons/autumn-no-leaves-lod-swamp-fix",
+      "notes": "Fixes green trees in swamp"
+    },
+    {
+      "name": "GAMMA Massive Text Overhaul Project GMTOP v1.4.3",
+      "type": "mod",
+      "state": "missing",
+      "dir": "GAMMA_Massive_Text_Overhaul_Project_GMTOP_v1.4.3",
+      "author": "Dr.Pr1nkos",
+      "entry_point": [],
+      "dl_url": "https://www.moddb.com/addons/start/243662",
+      "human_url": "https://www.moddb.com/mods/stalker-anomaly/addons/na243662",
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,387 @@
+#!/usr/bin/env bash
+version=0.1.0
+tool=modtui
+[[ -n $XDG_USER_HOME ]] && conf="$XDG_USER_HOME/$tool" || conf="$HOME/.config/$tool"
+[[ -n $XDG_STATE_HOME ]] && state="$XDG_STATE_HOME/$tool" || state="$HOME/.local/state/$tool"
+[[ -n $XDG_CACHE_HOME ]] && cache="$XDG_CACHE_HOME/$tool" || cache="$HOME/.cache/$tool"
+export modtui_lib="/usr/local/lib/modtui"
+export modtui_path="$conf"
+export modtui_conf="$conf/config.json"
+export modtui_state="$state"
+export modtui_log="$state/debug.log"
+export modtui_cache="$cache"
+
+deps=(
+	"fzf"
+	"jq"
+	"convmv"
+	)
+check_deps(){
+	for i in "${deps[@]}"; do
+		[[ -n $(command -v $i) ]] && return
+		logger ERROR "Missing dependency: $i" loud
+		return 1
+	done
+}
+logger(){
+	"$modtui_lib/logger" "$@"
+}
+add(){
+	logger INFO "Entering mode '${FUNCNAME[0]}'" loud
+	while true; do
+		read -e -p "Game/config name: " name
+		[[ -z $name ]] && { echo "Name can't be empty"; continue; }
+		record_exists "$name"
+		[[ -n $name ]] && break
+	done
+	while true; do
+		read -e -p "Game path: " path
+		path=$(<<< "$path" envsubst)
+		path=$(realpath "$path")
+		[[ ! -d "$path" ]] && { echo "Not a valid path"; continue; }
+		[[ -z $(ls -A "$path") ]] && { echo "Game path is empty"; continue; }
+		[[ -d "$path" ]] && break
+	done
+	while true; do
+		read -e -p "Mods path: " mod
+		mod=$(<<< "$mod" envsubst)
+		mod=$(realpath "$mod")
+		[[ ! -d "$mod" ]] && { echo "Not a valid path"; continue; }
+		[[ -z $(ls -A "$mod") ]] && { echo "Mod path is empty"; continue; }
+		[[ -d "$mod" ]] && break
+	done
+	while true; do
+		read -e -p "Wine prefix: " prefix
+		prefix=$(<<< "$prefix" envsubst)
+		prefix=$(realpath "$prefix")
+		drc=$(find "$prefix" -type d -name drive_c)
+		[[ -z "$drc" ]] && { echo "Not a wine prefix"; continue; }
+		[[ -n "$drc" ]] && break
+	done
+	while true; do
+		read -e -p "Executable: " exe
+		exe=$(<<< "$exe" envsubst)
+		[[ ! -f "$exe" ]] && { echo "Not a valid executable"; continue; }
+		[[ -f "$exe" ]] && break
+	done
+	exe=$(<<< "$exe" awk '{print tolower($0)}')
+	< "$modtui_conf" jq --arg name "$name" --arg path "$path" \
+		--arg mod "$mod" --arg prefix "$prefix" --arg exe "$exe" '
+		.games+=[{"name":$name,
+		"game_path":$path,
+		"mod_path":$mod,
+		"prefix":$prefix,
+		"runtime":$exe,
+		"hash":null
+		}]
+		' > "$modtui_conf.new" && mv "$modtui_conf.new" "$modtui_conf"
+	logger INFO "Added record: '$name'" loud
+	logger INFO "Creating modlist against '$mod'" loud
+	"$modtui_lib/convert" from_dirs "$name" "$mod"
+	[[ ! $? -eq 0 ]] && { logger WARN "Something went wrong" loud; return; }
+	logger INFO "Launch this config with: 'modtui launch $name'" loud
+}
+clean(){
+	logger INFO "Entering mode '${FUNCNAME[0]}'" loud
+	local name="$1"
+	validate "$name"
+	[[ $? -eq 1 ]] && return 1
+	local dir=$(< "$modtui_conf" jq -r --arg name "$name" '.games[]|select(.name==$name).game_path')
+	[[ ! -d $dir ]] && { logger ERROR "Path '$dir' no longer exists"; return 1; }
+	"$modtui_lib/link" clean "$dir" loud
+}
+convert(){
+	logger INFO "Entering mode '${FUNCNAME[0]}'" loud
+	"$modtui_lib/convert" convert "$1"
+}
+list(){
+	[[ ! -f "$modtui_conf" ]] && { echo No records; return 1; }
+	local res=$(< "$modtui_conf" jq -r '.games|sort_by(.name)[]')
+	echo "Available configs:"
+	if [[ $1 == "short" ]]; then
+		<<< "$res" jq -r '"\t\(.name)"'
+		return 0
+	fi
+	<<< "$res" jq -r '
+			"\t\(.name)\n\t"+
+			" ├───── G \(.game_path)\n\t"+
+			" ├───── M \(.mod_path)\n\t"+
+			" ├───── W \(.prefix)\n\t"+
+			" └───── R \(.runtime)"
+			'
+	local list=$(<<< "$res" sed 's/^/\t/g')
+}
+validate(){
+	res=$(< "$modtui_conf" jq -r --arg name "$1" '.games[]|select(.name==$name)')
+	if [[ -z "$res" ]]; then
+		logger ERROR "No such record" loud
+		return 1
+	fi
+}
+record_exists(){
+	local newname="$1"
+	if [[ $(< "$modtui_conf" jq --arg name $newname 'any(.games[].name;.==$name)') == "true" ]]; then
+		logger ERROR "Cannot rename into existing record" loud; exit 1
+	fi
+}
+rename(){
+	logger INFO "Entering mode '${FUNCNAME[0]}'" loud
+	validate "$1"
+	[[ $? -eq 1 ]] && return 1
+	[[ -z "$2" ]] && { logger ERROR "No new name provided" loud; return 1; }
+	local oldname="$1"
+	local newname="$2"
+	record_exists "$newname"
+	< "$modtui_conf" jq --arg oldname "$oldname" --arg newname $newname '
+	(.games[]|select(.name==$oldname)).name|=$newname
+	' > "$modtui_conf.new" && mv "$modtui_conf.new" "$modtui_conf"
+	logger INFO "Updated '$oldname' to '$newname'" loud
+}
+remove(){
+	logger INFO "Entering mode '${FUNCNAME[0]}'" loud
+	local name="$1"
+	validate "$name"
+	[[ $? -eq 1 ]] && return 1
+	< "$modtui_conf" jq --arg name "$name" 'del(.games[]|select(.name==$name))' > "$modtui_conf.new" &&
+		mv "$modtui_conf.new" "$modtui_conf"
+	rm "$modtui_path/$name.json" 2>/dev/null
+	logger INFO "Removed '$name'" loud
+
+}
+set_sidebar(){
+	logger INFO "Getting sidebar metadata" loud
+	local name="$1"
+	local modpath="$2"
+
+	export mc=$(< "$modtui_path/$1.json" jq '[.mods[]|select(.type=="mod")]|length')
+	export su=$(du -sh "$modpath" | awk '{print $1}')
+	export mc=$(ls -1 -d "$modpath"/*/ | wc -l)
+}
+launch(){
+	logger INFO "Entering mode '${FUNCNAME[0]}'" loud
+	local name="$1"
+	[[ -z "$1" ]] && { logger ERROR "Missing argument: config name" loud; return 1; }
+	validate "$name"
+	[[ $? -eq 1 ]] && return 1
+	if [[ ! -f "$modtui_path/$name.json" ]]; then
+		logger ERROR "Missing file: '$modtui_path/$name.json'" loud
+		local path=$(< "$modtui_conf" jq -r --arg name "$name" '.games[]|select(.name==$name).mod_path')
+		logger INFO "Recreating file: '$modtui_path/$name.json'" loud
+		"$modtui_lib/convert" from_dirs "$name" "$path"
+		validate "$name"
+	fi
+	readarray -t args < <(<<< "$res" jq -r '"\(.name)\n\(.game_path)\n\(.mod_path)\n\(.prefix)\n\(.runtime)"')
+	test_paths "$name" "${args[@]}"
+	test_existing "$name" "${args[2]}"
+	test_missing "$name" "${args[2]}"
+	test_upper "${args[1]}" "${args[2]}"
+
+	local total=$(< "$modtui_path/$name.json" jq '.mods|length')
+	local working=$(< "$modtui_path/$name.json" jq '
+		[.mods[]|select(.state=="enabled" or .state=="disabled")]|length')
+
+	set_sidebar "$name" "${args[2]}"
+	logger INFO "Found $working working mods out of $total total" loud
+	logger INFO "Launching mod manager" loud
+	"$modtui_lib/view" "${args[@]}"
+}
+help(){
+	case "$1" in
+		list) printf "\n\t- lists available configs (append 'short' for compact list)" ;;
+		add) printf "\n\t- adds a new config (follow prompts)" ;;
+		rename) printf "\n\t- renames the config <name> to <targetname>" ;;
+		remove) printf "\n\t- removes the config <name>" ;;
+		clean) printf "\n\t- resets the files in <name>'s game dir to default" ;;
+		convert) printf "\n\t- converts between MO2 list format and JSON" ;;
+		launch) printf "\n\t- launches mod manager for <name>" ;;
+		*) printf "\n\t- available help contexts: list, add, rename, remove, clean, convert, launch" ;;
+	esac
+	printf "\n\n"
+}
+usage(){
+	t=$(printf "\t")
+	cat <<-EOF
+
+	Usage: modtui <command> {option}
+
+	${t}add
+	${t}list {short}
+	${t}launch <config name>
+	${t}rename <config name>
+	${t}remove <config name>
+	${t}clean <config name>
+	${t}convert <mod list> (TXT<->JSON)
+	${t}help <command>
+
+	EOF
+}
+cleanup(){
+	tput cnorm
+	echo
+	logger INFO "User exit" loud
+	exit 1
+}
+make_config(){
+	logger INFO "No config file, creating one" loud
+	echo "{\"mods\":[]}" > "$modtui_conf"
+}
+lowercase(){
+	local target="$1"
+	convmv -r --notest -f utf-8 --lower "$target"/* 1>/dev/null 2>/dev/null
+}
+test_upper(){
+	fold_prompt(){
+		logger ERROR "One or more files in $2 contain uppercase. Allow modTUI to case-fold all files? [Y/n]" loud
+		read -p '' prompt
+		case $prompt in
+			Y|y|"") lowercase "$1" ;;
+			n|N) { logger INFO "User exit" loud; exit 1; } ;;
+		esac
+
+	}
+	[[ -n $(find "$1"/* -name "*[[:upper:]]*") ]] && fold_prompt "$1" "game path"
+	shift
+	for i in "$1"/*/; do
+		if [[ -n $(ls -A "$i") ]]; then
+			[[ -z $(find "$i"* -name "*[[:upper:]]*") ]] && continue
+			fold_prompt "$i" "mod dirs"
+			break
+		fi
+	done
+}
+test_existing(){
+	logger INFO "Checking for mod state changes" loud
+	local name="$1"
+	local modpath="$2"
+	local check=$(< "$modtui_path/$name.json" jq -r '.mods[]|.dir')
+	local states=$(< "$modtui_path/$name.json" jq -r '.mods[].state')
+	local conf="$modtui_path/$name.json"
+	readarray -t c <<< "$check"
+	readarray -t s <<< "$states"
+	for((i=0;i<${#c[@]};i++)); do
+		dir="$modpath/${c[$i]}"
+		mod="${c[$i]}"
+		state=${s[$i]}
+		[[ $mod == "null" ]] && continue
+		case "$state" in
+			enabled|disabled)
+				if [[ -d "$dir" ]]; then
+					if [[ -z $(ls -A "$dir") ]]; then
+						state=empty
+					else
+						continue
+					fi
+				else
+				echo "$dir not exists"
+					state=missing
+				fi
+				;;
+			missing)
+				if [[ -d "$dir" ]]; then
+					if [[ -z $(ls -A "$dir") ]]; then
+						state=empty
+					else
+						state=disabled
+					fi
+				else
+					continue
+				fi
+				;;
+			empty)
+				if [[ -d "$dir" ]]; then
+					if [[ -z $(ls -A "$dir") ]]; then
+						continue
+					else
+						state=disabled
+					fi
+				else
+					state=missing
+				fi
+				;;
+		esac
+		logger INFO "Setting '$mod' to '$state'" loud
+		< "$conf" jq --arg dir "$mod" --arg state $state '
+		(.mods[]|select(.dir==$dir)).state|=$state
+		' >> $conf.new && mv $conf.new $conf
+	done
+}
+test_missing(){
+	logger INFO "Checking for new mods" loud
+	local name="$1"
+	local modpath="$2"
+	readarray -t ldirs < <(ls -d "$modpath"/*/ | sed 's/\/$//g')
+	local cdirs=$(for i in "${ldirs[@]}"; do echo "${i#$modpath/}"; done)
+	local known_mods=$(< $modtui_path/$name.json jq -r '.mods[]|select(.dir!=null).dir' | sort)
+	local new_mods=$(comm -23 <(echo "$cdirs") <(echo "$known_mods"))
+	local missing_mods=$(comm -13 <(echo "$cdirs") <(echo "$known_mods"))
+	if [[ -n $new_mods ]]; then
+		logger INFO "Found new mods not present in config, adding" loud
+		"$modtui_lib/convert" add_into "$name" "$new_mods" "$modpath"
+	fi
+	if [[ -n $missing_mods ]]; then
+		local conf="$modtui_path/$name.json"
+		local known_missing=$(< "$conf" jq -r '.mods[]|select(.state=="missing").dir' | sort)
+		local update_missing=$(comm -13 <( echo "$known_missing") <(echo "$missing_mods"))
+		[[ -z "$update_missing" ]] && return
+		logger INFO "Found mods present in config but missing" loud
+		readarray -t missing <<< "$update_missing"
+		for (( i = 0; i < ${#missing[@]}; i++ )); do
+			mod=${missing[$i]}
+			logger INFO "Setting mod '$mod' to missing" loud
+			< "$conf" jq --arg dir "$mod" '
+			(.mods[]|select(.dir==$dir)).state|="missing"
+			' >> $conf.new && mv $conf.new $conf
+		done
+	fi
+}
+test_paths(){
+	logger INFO "Testing mod dir paths" loud
+	local name="$1"
+	shift 2
+	local gamepath="$1"
+	local modpath="$2"
+	local winepath="$3"
+	local runtime="$4"
+	for i in "$gamepath" "$modpath" "$winepath"; do
+		[[ ! -d "$i" ]] && { logger ERROR "Not a valid path: '$i'" loud; exit 1; }
+		[[ ! $(ls -d "$i"/*/) ]] && { logger ERROR "Path is empty: '$i'" loud; exit 1; }
+	done
+	[[ ! -f "$runtime" ]] && { logger ERROR "Game runtime is missing: '$runtime'" loud; exit 1; }
+}
+lock(){
+	local lock="$modtui_state/lockfile"
+	if [[ ! -f $lock ]]; then
+		touch "$lock"
+	fi
+	pid=$(cat "$lock")
+	ps -p $pid -o pid= >/dev/null 2>&1
+	res=$?
+	if [[ $res -eq 0 ]]; then
+		logger ERROR "Already running ($pid)" loud
+		exit 1
+	elif [[ $pid == $$ ]]; then
+		:
+	else
+		echo $$ > "$lock"
+	fi
+}
+main(){
+	logger INFO "Set cache dir to $modtui_cache"
+	logger INFO "Set conf file to $modtui_conf"
+	logger INFO "Set log file to $modtui_log"
+	[[ -f "$modtui_log" ]] && rm "$modtui_log"
+	[[ -n $(ls -A "$modtui_cache") ]] && rm "$modtui_cache"/*
+	[[ ! -d "$modtui_path" ]] && { logger ERROR "Config path missing, run 'make install' from repository root" loud; exit 1; }
+	check_deps
+	[[ $? -eq 1 ]] && exit 1
+	[[ ! -f "$modtui_conf" ]] && make_config
+	
+	case "$1" in
+		add|rename|remove|list|clean|convert|launch|help) "$@" ;;
+		*) usage; exit 1 ;;
+	esac
+}
+trap cleanup SIGINT INT
+export -f logger
+lock
+main "$@"

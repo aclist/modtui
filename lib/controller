@@ -1,0 +1,268 @@
+#!/bin/bash
+launch(){
+	local game="$1"
+	local runtime=$(< "$modtui_conf" jq -r --arg game "$game" '.games[]|select(.name==$game).runtime')
+	local prefix=$(< "$modtui_conf" jq -r --arg game "$game" '.games[]|select(.name==$game).prefix')
+	WINEPREFIX="$prefix" wine "$runtime" 1>/dev/null 2>/dev/null &
+}
+get_hash(){
+	< "$modtui_conf" jq -r --arg name "$1" '.games[]|select(.name==$name).hash'
+}
+gen_hash(){
+	echo "$1" | md5sum | awk '{print $1}'
+}
+update_hash(){
+	local game="$1"
+	local hash=$(gen_hash "$2")
+	< "$modtui_conf" jq --arg hash "$hash" \
+		--arg game "$game" '(.games[]|select(.name==$game)).hash|=$hash' > "$modtui_conf.new" &&
+		mv "$modtui_conf.new" "$modtui_conf"
+}
+reset_keys(){
+	local tmp="$modtui_cache/keys"
+	[[ -f $tmp ]] && rm $tmp
+}
+query(){
+	local ind=$2
+	case "$1" in
+		Notes)
+			local oldnotes=$(< "$modlist" jq -r --arg ind $ind '.mods[($ind|tonumber)].notes')
+			[[ "$oldnotes" == "null" ]] && return
+			echo "$oldnotes"
+			;;
+		Name)
+			local oldname=$(< "$modlist" jq -r --arg ind $ind '.mods[($ind|tonumber)].name')
+			echo "$oldname"
+			;;
+	esac
+}
+transform(){
+	echo "$1" > "$modtui_cache/query"
+	local ind=$2
+	local res=$(< "$modlist" jq -r --arg ind $ind '.mods[($ind|tonumber)].type')
+	if [[ $res == "separator" ]]; then
+		echo ""
+	else
+
+		echo "$1: "
+	fi
+}
+filter_input(){
+	local tmp="$modtui_cache/query"
+	if [[ -f $tmp ]]; then
+		local t=$(cat $tmp)
+		rm "$tmp"
+		case "$t" in
+			Separator) insert_sep "$@" ;;
+			Notes) edit_notes "$@" ;;
+			Name) edit_name "$@" ;;
+		esac
+	else
+		redraw
+	fi
+}
+insert_sep(){
+	local ind="$1"
+	local sep="$2"
+	[[ -z $2 ]] && { redraw; return; }
+	< "$modlist" jq --arg ind $ind --arg name "$sep" '
+			.mods|=def ins($i; $j): .[:$i] + [$j] + .[$i:]; ins(($ind|tonumber);{"name":$name,"type":"separator","state":"disabled"})
+			' > "$modlist.new" && mv "$modlist.new" "$modlist"
+	redraw
+	logger INFO "Added record at index $ind" silent
+}
+delete_cat(){
+	reset_keys
+	local ind="$1"
+	< "$modlist" jq --arg ind $ind 'del(.mods[($ind|tonumber)])
+		' > "$modlist.new" && mv "$modlist.new" "$modlist"
+	logger INFO "Deleted record at index $ind" silent
+	redraw
+}
+update_list(){
+	readarray -t sel < <(< "$1" awk '{print $1substr($0, index($0,$3))}')
+	for (( i = 0; i < ${#sel[@]}; i++ )); do
+		it="${sel[$i]}"
+		ind=$(<<< "$it" sed 's/\(^[0-9]\+\)\(.\)\(.*\)/\1/')
+		ind=$((ind-1))
+		flag=$(<<< "$it" sed 's/\(^[0-9]\+\)\(.\)\(.*\)/\2/')
+		mod=$(<<< "$it" sed 's/\(^[0-9]\+\)\(.\)\(.*\)/\3/')
+		case "$flag" in
+			"x") continue ;;
+			"-")
+				state=enabled
+				< "$modlist" jq --arg ind $ind \
+					--arg state "$state" '(.mods[($ind|tonumber)]).state|=$state
+					' > "$modlist.new" && mv "$modlist.new" "$modlist"
+				;;
+			"+")
+				state=disabled
+				< "$modlist" jq --arg ind $ind \
+					--arg state "$state" '(.mods[($ind|tonumber)]).state|=$state
+					' > "$modlist.new" && mv "$modlist.new" "$modlist"
+				;;
+		esac
+		logger INFO "Toggled index $ind to $state" silent
+	done	
+	clear
+	redraw
+}
+launcher(){
+	launch_and_hold(){
+		#TODO: wait for process
+		ind=$2
+		launch "$game"
+		sidebar "$2"
+	}
+
+	#TODO: better wine discovery
+	if [[ -n $(ps aux | grep winedevice.exe | grep -v grep) ]]; then
+		logger WARN "Wine still running" loud
+		return 1
+	fi
+	local ind="$1"
+	local modlist="$2"
+	local prehash=$(< "$modlist" jq -r '.mods[]|select(.state=="enabled").dir')
+	local old_hash=$(get_hash "$game")
+	local hash=$(gen_hash "$prehash")
+
+	if [[ $hash != "$old_hash" ]]; then
+		logger INFO "Modlist hash mismatch" silent
+		readarray -t moddirs < <(< "$modlist" jq -r '
+				.mods[]|select(.state=="enabled")
+				|"\(if .entry_point|length > 0 then .dir+"/"+.entry_point[] else .dir end)"')
+		"$modtui_lib/link" load "$game" "$gamepath" "$modpath" "${moddirs[@]}" 1>&2
+
+		case $? in
+			1)
+				logger WARN "User exit" loud
+				return 1
+				;;
+			0)
+				logger INFO "Updating modlist hash and launching" loud
+				prehash=$(< "$modlist" jq -r '.mods[]|select(.state=="enabled").dir')
+				update_hash "$game" "$prehash"
+				launch_and_hold "$game" "$ind"
+				;;
+		esac
+	else
+		logger INFO "No changes to mods, launching" loud
+		launch_and_hold "$game" "$ind"
+	fi
+}
+edit_name(){
+	local ind=$1
+	local name=$(<<< "$2" sed 's/\(^[0-9]\+\)\(.\)\(.*\)/\3/')
+	< "$modlist" jq --arg ind $ind \
+			--arg name "$name" \
+			'.mods[($ind|tonumber)].name|=$name
+			' > "$modlist.new" && mv "$modlist.new" "$modlist"
+	redraw
+}
+print_notes(){
+	local ind=$1
+	< "$modlist" jq -r --arg ind $ind '.mods[($ind|tonumber)].notes'
+}
+edit_notes(){
+	local ind=$1
+	local newnotes="$2"
+	< "$modlist" jq --arg ind $ind \
+			--arg notes "$newnotes" \
+			'.mods[($ind|tonumber)].notes|=$notes
+			' > "$modlist.new" && mv "$modlist.new" "$modlist"
+	redraw
+}
+move_mod(){
+	local endind
+	local startind="$1"
+	local total=$(< "$modlist" jq '.mods|length')
+	total=$((total-1))
+	case "$2" in
+		up)
+			[[ $startind -eq 0 ]] && { redraw; return; }
+			endind=$((startind-1))
+			;;
+		down)
+			[[ $startind -eq $total ]] && { redraw; return; }
+			endind=$((startind+1))
+			;;
+	esac
+	< "$modlist" jq --arg ind $startind \
+			--arg endind $endind '
+			.mods|=def swap(i;j): .[i] as $t | .[i]=.[j]|.[j]=$t; swap(($ind|tonumber);($endind|tonumber))' \
+				>> "$modlist.new" && mv "$modlist.new" "$modlist"
+	logger INFO "Moved index $startind to $endind" silent
+	redraw
+}
+toggle_keys(){
+	local tmp="$modtui_cache/keys"
+	if [[ ! -f $tmp ]]; then
+		keys
+		touch $tmp
+	else
+		sidebar "$1"
+		rm $tmp
+	fi
+}
+keys(){
+	cat <<-EOF
+
+	Load order is sequential.
+	Mods lower on list take precedence.
+
+	Use Tab to multi-select mods and mark
+	for bulk enabling/disabling.
+
+	KEYS
+
+	Arrows:		navigate mod list
+	Space:		toggle mod enabled/disabled
+	C-j/C-k:	move mod load order down/up
+	C-e:		edit mod name
+	C-n:		edit mod note
+	C-t:		create tag (separator) above current line
+	C-l:		launch game
+	j/k		scroll preview window down/up
+
+	C-q/C-c/Esc	quit
+	?		toggle this menu
+	
+	LEGEND
+	+		mod is enabled
+	-		mod is disabled
+	x		mod is missing or empty
+	<LABEL>─────	category separator
+	EOF
+}
+sidebar(){
+	local ind="$1"
+	local res=$(< "$modlist" jq --arg ind $ind '.mods[($ind|tonumber)]')
+	local mod=$(<<< "$res" jq -r '.dir')
+	local type=$(<<< "$res" jq -r '.type')
+	local state=$(<<< "$res" jq -r '.state')
+
+	cat <<-EOF
+
+	Mods:		$mc
+	Separators:	$(< "$modlist" jq '[.mods[]|select(.type=="separator")]|length')
+	Space used:	$su
+	EOF
+	[[ "$type" == "separator" ]] && return
+	[[ "$state" == "missing" ]] && return
+	echo
+	cat <<-EOF
+	Mod size:	$(du -sh "$modpath/$mod" | awk '{print $1}' 2>/dev/null)
+	Files:		$(find "$modpath/$mod" -type f | wc -l | numfmt --grouping)
+	EOF
+	notes=$(<<< "$res" jq -r '.notes')
+	url=$(<<< "$res" jq -r '.human_url')
+	[[ -n "$notes" ]] && printf "Notes:\t\t%s\n" "$notes"
+	[[ -n "$url" ]] && printf "URL:\t\t%s\n" "$url"
+	r=$(find "$modpath/$mod"/* -maxdepth 0 -type f -iname "*README*" -print -quit 2>/dev/null)
+	[[ -z $r ]] && return
+	echo
+	echo "README"
+	sed 's/<br>//g' "$r" | fmt -s -w 40
+
+}
+"$@"

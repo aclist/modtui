@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+clean(){
+	mode=$2
+	logger INFO "Started cleanup" silent
+	readarray -t unlink < <(find "$1" -type l)
+	readarray -t rename < <(find "$1" -type f -name "*modtui.bak")
+	if [[ ${#unlink[@]} -gt 0 ]]; then
+		for (( i = 0; i < ${#unlink[@]}; i++ )); do
+			echo [INFO] Cleaning file $((i+1)) of ${#unlink[@]}
+			if [[ $mode == "silent" ]]; then
+				clear
+			fi
+			unlink "${unlink[$i]}"
+		done
+	fi
+	if [[ ${#rename[@]} -gt 0 ]]; then
+		for (( i = 0; i < ${#rename[@]}; i++ )); do
+			d=$(dirname "${rename[$i]}")
+			oldname=$(basename "${rename[$i]}" .modtui.bak)
+			echo [INFO] Restoring file $((i+1)) of ${#rename[@]}
+			if [[ $mode == "silent" ]]; then
+				clear
+			fi
+			mv "${rename[$i]}" "$d/$oldname"
+		done
+	fi
+	logger INFO "Finished cleanup" loud
+}
+cleanup(){
+	tput cnorm
+	echo
+	logger INFO "User exit"
+	return 1
+}
+walk_tree(){
+	tput civis
+	local modroot="$1"
+	local longmodpath="$2"
+	local it="$3"
+	local total="$4"
+	[[ ! -d "$modroot" ]] && { logger WARN "Invalid path: '$path'" silent; let warn++; return 1; }
+	realmodpath=$(realpath "$modroot/$longmodpath")
+	if [[ -z $(ls -A "$realmodpath") ]]; then
+		logger WARN "Entry point was empty" silent
+		let warn++
+		total=$((total-1))
+	fi
+	readarray -t files < <(find "$realmodpath"/*)
+	for (( i = 0; i < ${#files[@]}; i++ )); do
+		local ignore=$(basename "${files[$i]}")
+		if [[ $(grep -s "^$ignore$" $modtui_path/.modignore) ]]; then
+			logger INFO "'$ignore' in ignore file, skipping" silent
+			continue
+		fi
+		echo "Loading mod $it of $total, processing file $((i+1)) of ${#files[@]}"
+		clear
+		shortmodpath=$(<<< "$longmodpath" awk -F/ '{print $1}')
+		parents="${files[$i]#${modroot}/${shortmodpath}/}"
+		dest="$rootdir/$parents"
+		if [[ -d "${files[$i]}" ]]; then
+			if [[ ! -d "$dest" ]]; then
+				mkdir -p "$dest"
+			fi
+		elif  [[ -f "$dest" ]]; then
+			if [[ ! -L "$dest" ]]; then
+				mv "$dest" "$dest.modtui.bak"
+				[[ ! $? -eq 0 ]] && let warn++
+			fi
+			ln -s -f "${files[$i]}" "$dest"
+			[[ ! $? -eq 0 ]] && let warn++
+		else
+			ln -s -f "${files[$i]}" "$dest"
+			[[ ! $? -eq 0 ]] && let warn++
+		fi
+	done
+	tput cnorm
+}
+load(){
+	game="$1"
+	rootdir="$2"
+	local moddir="$3"
+	clean "$rootdir" silent
+
+	shift 3
+
+	local total_mods=$#
+	local it=1
+	warn=0
+	for i in "$@" ; do
+		walk_tree "$moddir" "$i" $it $total_mods
+		[[ $? -eq 130 ]] && return 1
+		let it++
+	done
+	logger INFO "Finished with ${warn} warnings" silent
+}
+"$@"

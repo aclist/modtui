@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+version=0.1.0
+fzf_opts=(
+	"--scrollbar=┃"
+	"--disabled"
+	"--expect=ctrl-q,esc,ctrl-c"
+	"--preview-window=40%"
+	"--sync"
+	"--ansi"
+	"--layout=reverse"
+	"--preview-window=border-sharp,wrap"
+	"-m"
+	"-d └"
+	"--color=gutter:-1"
+	"--info=hidden"
+	"--prompt="
+	)
+controller(){
+	"$modtui_lib/controller" "$@"
+}
+redraw(){
+	< $modlist jq -r \
+		'.mods[]|
+		"\(if .type == "separator" then "! "+.name+"───────────────────────" elif .state == "disabled" then "- "+.name elif .state == "enabled" then "+ "+.name else "x "+.name end)"' \
+		| sed \
+		-e "/^\!/! s/^/└\t/g" \
+		-e "/^\!/ s/^/└/g" \
+		-e "s/\(.*\)\(\tx\)\(.*\)/\1$(tput setaf 1)\2\3$(tput sgr0)/g" \
+		-e "s/\(.*\)\(\t+\)\(.*\)/\1$(tput sgr 0)\2\3/g" \
+		-e "s/\(.*\)\(!\)\(.*\)/\1$(tput sgr0)\3/g" \
+		-e "s/\(.*\)\(\t-\)\(.*\)/\1$(tput setaf 239)\2\3$(tput sgr0)/g" \
+		| awk '{print NR,$0}'
+}
+menu(){
+	controller="$modtui_lib/controller"
+	p(){
+		echo "$1" > /tmp/modtui.query
+		echo "$1: "
+	}
+	export -f p
+	while true; do
+		sel=$(redraw \
+		| fzf --sync "${fzf_opts[@]}" --with-nth 2.. \
+		--header="modTUI $version │ ? for help │ Mod prefix: $game" \
+		--preview "$controller sidebar {n}" \
+		--bind "start:pos(0)" \
+		--bind "?:preview($controller toggle_keys {n})" \
+		--bind "ctrl-l:preview($controller launcher {n} "$modlist")" \
+		--bind "ctrl-d:reload($controller delete_cat {n})" \
+		--bind "j:preview-down,k:preview-up" \
+		--bind "space:reload($controller update_list {+f})" \
+		--bind "ctrl-k:reload($controller move_mod {n} up)+up,ctrl-j:reload($controller move_mod {n} down)+down" \
+		--bind "ctrl-t:unbind(space)+transform-prompt($controller transform Separator)+change-query()+unbind(ctrl-t)" \
+		--bind "ctrl-n:unbind(space)+transform-prompt($controller transform Notes {n})+transform-query($controller query Notes {n})+unbind(ctrl-n)" \
+		--bind "ctrl-e:unbind(space)+transform-prompt($controller transform Name)+transform-query($controller query Name {n})+unbind(ctrl-e)" \
+		--bind "return:reload($controller filter_input {n} {q})+change-query()+change-prompt()+rebind(space)+rebind(ctrl-t)+rebind(ctrl-n)+rebind(ctrl-e)+refresh-preview"
+		)
+		sel="$(<<< "$sel" head -n1)"
+		case "$sel" in
+			ctrl-q|ctrl-c|esc) exit ;;
+		esac
+	done
+}
+main(){
+	menu "$@"
+}
+export -f controller
+export -f redraw
+
+export game="$1"
+export gamepath=$(realpath "$2")
+export modpath=$(realpath "$3")
+export modlist="$modtui_path/$game.json"
+main "$@"
