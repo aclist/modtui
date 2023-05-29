@@ -17,7 +17,7 @@ modTUI provides basic interoperability with MO2 modlists and can convert to and 
 
 Clone and install:
 ```
-git clone
+git clone https://github.com/aclist/modtui.git
 sudo make install
 ```
 
