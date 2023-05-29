@@ -154,7 +154,6 @@ set_sidebar(){
 	local modpath="$2"
 
 	local res=$(< "$modtui_path/$name.json" jq '[.mods[]|select(.type=="mod")]')
-	export mc=$(<<< "$res" jq 'length')
 	export en=$(<<< "$res" jq '[.[]|select(.state=="enabled")]|length')
 	export su=$(du -sh "$modpath" | awk '{print $1}')
 	export mc=$(ls -1 -d "$modpath"/*/ | wc -l)
