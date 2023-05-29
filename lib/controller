@@ -221,6 +221,7 @@ keys(){
 	C-e:		edit mod name
 	C-n:		edit mod note
 	C-t:		create tag (separator) above current line
+	C-d:		delete separator
 	C-l:		launch game
 	j/k		scroll preview window down/up
 
