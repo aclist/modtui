@@ -53,7 +53,8 @@ menu(){
 		--bind "ctrl-t:unbind(space)+transform-prompt($controller transform Separator)+change-query()+unbind(ctrl-t)" \
 		--bind "ctrl-n:unbind(space)+transform-prompt($controller transform Notes {n})+transform-query($controller query Notes {n})+unbind(ctrl-n)" \
 		--bind "ctrl-e:unbind(space)+transform-prompt($controller transform Name)+transform-query($controller query Name {n})+unbind(ctrl-e)" \
-		--bind "return:reload($controller filter_input {n} {q})+change-query()+change-prompt()+rebind(space)+rebind(ctrl-t)+rebind(ctrl-n)+rebind(ctrl-e)+refresh-preview"
+		--bind "ctrl-b:unbind(space)+transform-prompt($controller transform 'Move to index' {+n})+unbind(ctrl-b)" \
+		--bind "return:reload($controller filter_input {n} {q})+change-query()+change-prompt()+rebind(space)+rebind(ctrl-t)+rebind(ctrl-n)+rebind(ctrl-e)+rebind(ctrl-b)+refresh-preview"
 		)
 		sel="$(<<< "$sel" head -n1)"
 		case "$sel" in

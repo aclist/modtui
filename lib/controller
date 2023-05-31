@@ -38,14 +38,54 @@ query(){
 }
 transform(){
 	echo "$1" > "$modtui_cache/query"
-	local ind=$2
-	local res=$(< "$modlist" jq -r --arg ind $ind '.mods[($ind|tonumber)].type')
-	if [[ $res == "separator" ]]; then
-		echo ""
+	if [[ $1 == "Move to index" ]]; then
+		for i in $@; do
+			echo $i >> "$modtui_cache/indices"
+		done
 	else
-
-		echo "$1: "
+		local ind=$2
+		local res=$(< "$modlist" jq -r --arg ind $ind '.mods[($ind|tonumber)].type')
+		[[ $res == "separator" ]] && return
 	fi
+	echo "$1: "
+}
+move_to_index(){
+	[[ -z $1 ]] && { rm "$modtui_cache/indices"; redraw; return; }
+	local dest=$1
+	local l=$(tail -n1 "$modtui_cache/indices")
+	echo "LAST is $l" >> $HOME/log
+	j=0
+	#if last ind is smaller than first ind, selection was reversed, flip it
+	#if numbers are not contiguous, do not allow
+	#
+	#if moving to smaller index, first sel is N, then N+1
+	#if moving to larger index, tip always is same
+	#
+	#for((i=0;i<${#a[@]};i++)); do
+	#	it=${a[$i]}
+	#	next=${a[$((i+1))]}
+	#	[[ $i -eq $((${#a[@]}-1)) ]] && break
+	#	if [[ $next -ne $((it+1)) ]] && [[ $next -ne $((it-1)) ]]; then
+	#		break
+	#	fi
+	#	calc=$((it-next))
+	#done
+	if [[ $dest -gt $l ]]; then
+		dest=$dest
+		e=$(<<< "$l" head -n1)
+		for i in $(awk 'NR>3' "$modtui_cache/indices"); do
+			move_bulk $e $dest
+		done
+	else
+		dest=$dest
+		dest=$((dest+j))
+		for i in $(awk 'NR>3' "$modtui_cache/indices"); do
+			move_bulk $e $dest
+		done
+		let e++
+	fi
+	rm "$modtui_cache/indices"
+	redraw
 }
 filter_input(){
 	local tmp="$modtui_cache/query"
@@ -56,6 +96,7 @@ filter_input(){
 			Separator) insert_sep "$@" ;;
 			Notes) edit_notes "$@" ;;
 			Name) edit_name "$@" ;;
+			Move*) move_to_index $2 ;;
 		esac
 	else
 		redraw
@@ -68,8 +109,8 @@ insert_sep(){
 	< "$modlist" jq --arg ind $ind --arg name "$sep" '
 			.mods|=def ins($i; $j): .[:$i] + [$j] + .[$i:]; ins(($ind|tonumber);{"name":$name,"type":"separator","state":"disabled"})
 			' > "$modlist.new" && mv "$modlist.new" "$modlist"
-	redraw
 	logger INFO "Added record at index $ind" silent
+	redraw
 }
 delete_cat(){
 	reset_keys
@@ -172,6 +213,22 @@ edit_notes(){
 			' > "$modlist.new" && mv "$modlist.new" "$modlist"
 	redraw
 }
+move_bulk(){
+	local ind=$1
+	local dest=$2
+	if [[ $dest -lt $ind ]]; then
+		delind=$((ind+1))
+	else
+		dest=$((dest+1))
+		delind=$ind
+	fi
+	< "$modlist" jq -M --arg dest $dest \
+		--arg ind $ind --arg delind $delind \
+		'.mods|=def ins($i; $j): .[:$i] + [$j] + .[$i:]; ins(($dest|tonumber);.[($ind|tonumber)])' \
+		| jq -M --arg delind $delind 'del(.mods[($delind|tonumber)])
+			' > "$modlist.new" && mv "$modlist.new" "$modlist"
+	logger INFO "Moved index $startind to $endind" silent
+}
 move_mod(){
 	local endind
 	local startind="$1"
@@ -215,14 +272,15 @@ keys(){
 
 	KEYS
 
-	Arrows:		navigate mod list
-	Space:		toggle mod enabled/disabled
-	C-j/C-k:	move mod load order down/up
-	C-e:		edit mod name
-	C-n:		edit mod note
-	C-t:		create tag (separator) above current line
-	C-d:		delete separator
-	C-l:		launch game
+	Arrows		navigate mod list
+	Space		toggle mod enabled/disabled
+	C-j/C-k		move mod load order down/up
+	C-b		bulk move mods to index
+	C-e		edit mod name
+	C-n		edit mod note
+	C-t		create tag (separator) above current line
+	C-d		delete separator
+	C-l		launch game
 	j/k		scroll preview window down/up
 
 	C-q/C-c/Esc	quit
@@ -241,10 +299,12 @@ sidebar(){
 	local mod=$(<<< "$res" jq -r '.dir')
 	local type=$(<<< "$res" jq -r '.type')
 	local state=$(<<< "$res" jq -r '.state')
+	local en=$(<"$modlist" jq '[.mods[]|select(.state=="enabled")]|length')
 
 	cat <<-EOF
 
-	Mods:		$mc
+	Index:		$ind
+	Mods:		$en/$mc
 	Separators:	$(< "$modlist" jq '[.mods[]|select(.type=="separator")]|length')
 	Space used:	$su
 	EOF

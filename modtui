@@ -50,6 +50,7 @@ add(){
 		[[ -z $(ls -A "$mod") ]] && { echo "Mod path is empty"; continue; }
 		[[ -d "$mod" ]] && break
 	done
+	test_upper "$path" "$mod"
 	while true; do
 		read -e -p "Wine prefix: " prefix
 		prefix=$(<<< "$prefix" envsubst)
@@ -228,7 +229,7 @@ make_config(){
 }
 lowercase(){
 	local target="$1"
-	convmv -r --notest -f utf-8 --lower "$target"/* 1>/dev/null 2>/dev/null
+	convmv -r --notest -f utf-8 --lower "$target"/*
 }
 test_upper(){
 	fold_prompt(){
