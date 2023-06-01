@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 clean(){
-	mode=$2
+	export mode=$2
 	logger INFO "Started cleanup" silent
 	readarray -t unlink < <(find "$1" -type l)
 	readarray -t rename < <(find "$1" -type f -name "*modtui.bak")
+	export de=${#unlink[@]}
 	if [[ ${#unlink[@]} -gt 0 ]]; then
-		for (( i = 0; i < ${#unlink[@]}; i++ )); do
-			echo [INFO] Cleaning file $((i+1)) of ${#unlink[@]}
+		pc(){
+			echo "Cleaning file $2 of $de"
+			unlink "$1"
 			if [[ $mode == "silent" ]]; then
 				clear
 			fi
-			unlink "${unlink[$i]}"
-		done
+		}
+		export -f pc
+		printf "%s\n" "${unlink[@]}" | parallel -j200 pc {} {#}
 	fi
 	if [[ ${#rename[@]} -gt 0 ]]; then
 		for (( i = 0; i < ${#rename[@]}; i++ )); do
@@ -34,50 +37,57 @@ cleanup(){
 }
 walk_tree(){
 	tput civis
-	local modroot="$1"
-	local longmodpath="$2"
+	export modroot="$1"
+	export longmodpath="$2"
 	local it="$3"
 	local total="$4"
 	[[ ! -d "$modroot" ]] && { logger WARN "Invalid path: '$path'" silent; let warn++; return 1; }
 	realmodpath=$(realpath "$modroot/$longmodpath")
-	if [[ -z $(ls -A "$realmodpath") ]]; then
-		logger WARN "Entry point was empty" silent
-		let warn++
-		total=$((total-1))
-	fi
-	readarray -t files < <(find "$realmodpath"/*)
-	for (( i = 0; i < ${#files[@]}; i++ )); do
-		local ignore=$(basename "${files[$i]}")
-		if [[ $(grep -s "^$ignore$" $modtui_path/.modignore) ]]; then
-			logger INFO "'$ignore' in ignore file, skipping" silent
-			continue
-		fi
-		echo "Loading mod $it of $total, processing file $((i+1)) of ${#files[@]}"
+	shortmodpath=$(<<< "$longmodpath" awk -F/ '{print substr($0,index($0,$2))}')
+
+	readarray -t files < <(find "$realmodpath"/* -type f)
+	readarray -t dirs < <(find "$realmodpath"/* -type d \
+		| awk -F"$modroot/$longmodpath/" '{print substr($0,index($0,$2))}' \
+		| sed "s|^|$rootdir/|g")
+
+	export it
+	export total
+	export modroot
+	export longmodpath
+	export dir_ct=${#dirs[@]}
+	export file_ct=${#files[@]}
+	link_dirs(){
+		mkdir -p "$1"
+		printf "Loading mod %i of %i, " "$it" "$total"
+		printf "dir %i of %i\n" $2 $dir_ct
 		clear
-		shortmodpath=$(<<< "$longmodpath" awk -F/ '{print $1}')
-		parents="${files[$i]#${modroot}/${shortmodpath}/}"
-		dest="$rootdir/$parents"
-		if [[ -d "${files[$i]}" ]]; then
-			if [[ ! -d "$dest" ]]; then
-				mkdir -p "$dest"
-			fi
-		elif  [[ -f "$dest" ]]; then
-			if [[ ! -L "$dest" ]]; then
-				mv "$dest" "$dest.modtui.bak"
-				[[ ! $? -eq 0 ]] && let warn++
-			fi
-			ln -s -f "${files[$i]}" "$dest"
-			[[ ! $? -eq 0 ]] && let warn++
-		else
-			ln -s -f "${files[$i]}" "$dest"
-			[[ ! $? -eq 0 ]] && let warn++
+
+	}
+	link_files(){
+		local src="$1"
+		local target=$(<<< "$1" awk -F"$modroot/$longmodpath/" '{print substr($0,index($0,$2))}' \
+			| sed "s|^|$rootdir/|g")
+		local ignore=$(basename "$target")
+		if [[ $(grep -s "^$ignore$" $modtui_path/.modignore) ]]; then
+			return
 		fi
-	done
+		if [[ -f "$target" ]] && [[ ! -L "$target" ]]; then
+			mv "$target" "$target.modtui.bak"
+		fi
+		ln -s -f "$src" "$target"
+		printf "Loading mod %i of %i, " "$it" "$total"
+		printf "file %i of %i\n" $2 $file_ct
+		clear
+	}
+	export -f link_dirs
+	export -f link_files
+	printf "%s\n" "${dirs[@]}" | parallel -j200 link_dirs {} {#}
+	printf "%s\n" "${files[@]}" | parallel -j200 link_files {} {#}
 	tput cnorm
 }
 load(){
 	game="$1"
-	rootdir="$2"
+	export rootdir="$2"
 	local moddir="$3"
 	clean "$rootdir" silent
 
