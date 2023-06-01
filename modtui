@@ -229,14 +229,17 @@ make_config(){
 }
 lowercase(){
 	local target="$1"
-	convmv -r --notest -f utf-8 --lower "$target"/*
+	case "$2" in
+		"mods") convmv -r --notest -f utf-8 --lower "$target"/*/* ;;
+		"game path") convmv -r --notest -f utf-8 --lower "$target"/* ;;
+	esac
 }
 test_upper(){
 	fold_prompt(){
 		logger ERROR "One or more files in $2 contain uppercase. Allow modTUI to case-fold all files? [Y/n]" loud
 		read -p '' prompt
 		case $prompt in
-			Y|y|"") lowercase "$1" ;;
+			Y|y|"") lowercase "$1" "$2" ;;
 			n|N) { logger INFO "User exit" loud; exit 1; } ;;
 		esac
 
@@ -246,7 +249,7 @@ test_upper(){
 	for i in "$1"/*/; do
 		if [[ -n $(ls -A "$i") ]]; then
 			[[ -z $(find "$i"* -name "*[[:upper:]]*") ]] && continue
-			fold_prompt "$i" "mod dirs"
+			fold_prompt "$1" mods
 			break
 		fi
 	done
