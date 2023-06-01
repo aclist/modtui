@@ -50,19 +50,8 @@ walk_tree(){
 		| awk -F"$modroot/$longmodpath/" '{print substr($0,index($0,$2))}' \
 		| sed "s|^|$rootdir/|g")
 
-	export it
-	export total
-	export modroot
-	export longmodpath
-	export dir_ct=${#dirs[@]}
 	export file_ct=${#files[@]}
-	link_dirs(){
-		mkdir -p "$1"
-		printf "Loading mod %i of %i, " "$it" "$total"
-		printf "dir %i of %i\n" $2 $dir_ct
-		clear
-
-	}
+	printf "Loading mod %i of %i, " "$it" "$total"
 	link_files(){
 		local src="$1"
 		local target=$(<<< "$1" awk -F"$modroot/$longmodpath/" '{print substr($0,index($0,$2))}' \
@@ -75,13 +64,14 @@ walk_tree(){
 			mv "$target" "$target.modtui.bak"
 		fi
 		ln -s -f "$src" "$target"
-		printf "Loading mod %i of %i, " "$it" "$total"
 		printf "file %i of %i\n" $2 $file_ct
 		clear
 	}
-	export -f link_dirs
+	for((i=0;i<${#dirs[@]};i++)); do
+		mkdir -p "${dirs[$i]}"
+		printf "dir %i of %i" "$i" "${#dirs[@]}"
+	done
 	export -f link_files
-	printf "%s\n" "${dirs[@]}" | parallel -j200 link_dirs {} {#}
 	printf "%s\n" "${files[@]}" | parallel -j200 link_files {} {#}
 	tput cnorm
 }
