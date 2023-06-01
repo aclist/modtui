@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 launch(){
 	local game="$1"
 	local runtime=$(< "$modtui_conf" jq -r --arg game "$game" '.games[]|select(.name==$game).runtime')
@@ -52,38 +52,33 @@ transform(){
 move_to_index(){
 	[[ -z $1 ]] && { rm "$modtui_cache/indices"; redraw; return; }
 	local dest=$1
-	local l=$(tail -n1 "$modtui_cache/indices")
-	echo "LAST is $l" >> $HOME/log
-	j=0
-	#if last ind is smaller than first ind, selection was reversed, flip it
-	#if numbers are not contiguous, do not allow
-	#
-	#if moving to smaller index, first sel is N, then N+1
-	#if moving to larger index, tip always is same
-	#
-	#for((i=0;i<${#a[@]};i++)); do
-	#	it=${a[$i]}
-	#	next=${a[$((i+1))]}
-	#	[[ $i -eq $((${#a[@]}-1)) ]] && break
-	#	if [[ $next -ne $((it+1)) ]] && [[ $next -ne $((it-1)) ]]; then
-	#		break
-	#	fi
-	#	calc=$((it-next))
-	#done
-	if [[ $dest -gt $l ]]; then
-		dest=$dest
-		e=$(<<< "$l" head -n1)
-		for i in $(awk 'NR>3' "$modtui_cache/indices"); do
-			move_bulk $e $dest
-		done
-	else
-		dest=$dest
-		dest=$((dest+j))
-		for i in $(awk 'NR>3' "$modtui_cache/indices"); do
-			move_bulk $e $dest
-		done
-		let e++
+	readarray -t inds < <(awk 'NR>3' "$modtui_cache/indices")
+	for((i=0;i<${#inds[@]};i++)); do
+		it=${inds[$i]}
+		j=$((i+1))
+		next=${inds[$j]}
+		if [[ $next -ne $((it+1)) ]] && [[ $next -ne $((it-1)) ]]; then
+			if [[ $i -eq $((${#inds[@]}-1)) ]]; then
+				continue
+			else
+				logger WARN "Bulk move targets out of order" silent
+				redraw
+				rm "$modtui_cache/indices"
+				return
+			fi
+		fi
+	done
+	if [[ ${inds[0]} -gt ${inds[-1]} ]]; then
+		readarray -t inds < <(printf "%s\n" "${inds[@]}" | tac)
 	fi
+	for((i=0;i<${#inds[@]};i++)); do
+		if [[ $dest -gt ${inds[0]} ]]; then
+			move_bulk ${inds[0]} $dest
+		else
+			readarray -t indr < <(printf "%s\n" "${inds[@]}" | tac)
+			move_bulk ${indr[0]} $dest
+		fi
+	done
 	rm "$modtui_cache/indices"
 	redraw
 }
