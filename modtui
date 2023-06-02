@@ -16,6 +16,7 @@ deps=(
 	"fzf"
 	"jq"
 	"parallel"
+	"wine"
 	)
 check_deps(){
 	for i in "${deps[@]}"; do

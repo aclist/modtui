@@ -11,6 +11,7 @@ modTUI provides basic interoperability with MO2 modlists and can convert to and 
 - convmv
 - fzf
 - jq
+- parallel
 - wine (to launch games)
 
 # Installation
