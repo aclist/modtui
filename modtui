@@ -279,8 +279,7 @@ test_existing(){
 						continue
 					fi
 				else
-				echo "$dir not exists"
-					state=missing
+ 					state=missing
 				fi
 				;;
 			missing)
