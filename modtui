@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-version=0.1.0
+version=0.2.0
 tool=modtui
 [[ -n $XDG_USER_HOME ]] && conf="$XDG_USER_HOME/$tool" || conf="$HOME/.config/$tool"
 [[ -n $XDG_STATE_HOME ]] && state="$XDG_STATE_HOME/$tool" || state="$HOME/.local/state/$tool"
@@ -12,9 +12,10 @@ export modtui_log="$state/debug.log"
 export modtui_cache="$cache"
 
 deps=(
+	"convmv"
 	"fzf"
 	"jq"
-	"convmv"
+	"parallel"
 	)
 check_deps(){
 	for i in "${deps[@]}"; do
