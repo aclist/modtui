@@ -1,6 +1,7 @@
 :nofooter:
 :toc: left
 :stylesheet: dark.css
+:icons: font
 
 = modTUI
 native Linux mod manager for Wine games | Last updated: {d}
@@ -115,8 +116,8 @@ Missing and empty mods cannot be launched and are displayed with ANSI color 1 in
 |dir|the base directory name of the mod. Distinguished from the name key above in that it shows the verbatim relative path name.
 |author|the author, if applicable. Used when creating modpacks.
 |entry_point|an array of sub-directories within the mod's root directory from which files should be sourced. This value is very important
-when loading malformed mods or mods expecting you to load only specific subdirs. If no entry point is set, the mod is loaded starting from the root directory.
-Entry points should be manually set by the user if necessary.
+when loading malformed mods or for mods expecting you to load only specific/optional subdirs. Entry points should be manually set by the user if necessary. If no entry point is set, the mod is loaded starting from the root directory. Prefix the directory with the flag `SELF=`
+to specify this directory as the same root entry point as the game's main data directory. This is used to source files from the main entry point without colliding with optional subdirectories. See <<Directory structure>>.
 |dl_url|the machine-readable URL to the upstream mod file.
 |human_url|the human-readable URL to the mod's information page.
 |notes|a human-readable string of notes, editable in the application.
@@ -134,6 +135,58 @@ Metadata such as author, URL, and notes is shown in modTUI's sidebar window when
 
 When adding new games via the CLI, each game receives its own JSON modlist in the format <game>.json.
 
+=== Directory structure
+
+modTUI expects well-formatted mod subdirectories using the following hierarchy, with one subdirectory per mod:
+
+----
+	master mod directory
+	 ├───── my_mod
+	 └───── my_other_mod
+----
+
+If a mod consists of multiple optional subdirectories and you want to specify certain ones, edit these under the `entry_point` array in the JSON as follows.
+The load order of mod components is itself sequential based on the array index.
+
+Given the mod directory `mymod` with three subdirectories, with nested subdirectories, and we want to source only `addons/addon1` and `gamedata`:
+
+----
+	mymod
+	 ├───── addons
+	 │                           └── addon1
+	 │                           └── addon2
+	 ├───── options
+	 └───── gamedata
+----
+
+Explicitly specify two directories:
+----
+    {
+      "name": "My Mod",
+      "type": "mod",
+      "state": "enabled",
+      "dir": "mymod",
+      "author": "author",
+      "entry_point": [
+        "addons/addon1", <1>
+        "SELF=gamedata" <2>
+      ]
+    }
+----
+<1> We want only `addon1` from the `addons` subdirectory, so we set this as the first entry point. Everything below `addon1` will be sourced into the root game path and into
+the corresponding directories.
+<2> `gamedata` is also the root entry point in the game path itself. We want to insert the files from the mod without sourcing all three directories under the mod root.
+In this case, use the reserved `SELF=` prefix to indicate that this part of the mod should be loaded, starting within the `gamedata` directory in the game root.
+
+If a mod contains no optional subdirectories and everything within it is supposed to be loaded, there is no need to set the `SELF=` flag or to even list the entry point,
+as loading will start from the mod root.
+
+During initial setup and subsequent boots, modTUI will check for mixed-case files in both the game root and mod directory root and 
+warn you to case-fold these (performed automatically by modTUI) to prevent collisions. This step is mandatory.
+
+The config file is treated as the source of authority with respect to which mods get loaded. If new mod directories are found that were
+not being tracked in the original config file, they are added set to disabled, keeping the original modlist intact. This allows you to
+use premade modlists while still having other directories mixed in.
 
 == Installation
 
@@ -274,12 +327,17 @@ so navigating off of a particular menu entry may terminate the launched process.
 
 === .modignore file
 
-You can specify a list of atomic filenames (basename, not path) to be ignored when loading mods. This would typically be files like
-`readme.txt`, `readme.md`, `meta.ini`, and `license`, and could also be user config files you don't want mods to change.
+You can specify a list of atomic filenames (basename, not path) or substrings to be ignored when loading mods. This would typically be files like
+`readme.txt`, `readme.md`, `meta.ini`, and `license`, or extensions like `.md`, `.txt`, and could also be user config files you don't want mods to change.
 
 Place the file under modTUI's config path with the name `.modignore`. This file applies globally to all games.
 
-The modignore file does not currently support wildcards. Ignored filenames are verbatim.
+The modignore file does not currently support wildcards and parses entries as substrings. E.g., the below would all be valid ways of ignoring a file
+named `readme.txt`, but pay attention to possible false positives with actual mod files when using generic names.
+
+- .txt (least restrictive, matches all .txt files)
+- readme (more restrictive, matches only files with the substring `readme`)
+- readme.txt (most restrictive, will only match files with the substring `readme.txt`)
 
 == Roadmap
 
