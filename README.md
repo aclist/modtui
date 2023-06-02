@@ -58,5 +58,6 @@ Refer to the [documentation](https://aclist.github.io/modtui/modtui.html) for ad
 |Bulk enable/disable all mods|in development|
 |FOMOD XML support|in development|
 |Command line tab expansion|in development|
+|Better caching and cleanup|in development|
 |Resolve inter-mod conflicts|feasibility testing|
 |BSA file handling|feasibility testing|
