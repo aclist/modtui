@@ -53,9 +53,9 @@ Refer to the [documentation](https://aclist.github.io/modtui/modtui.html) for ad
 
 |Feature|Status|
 |---|---|
-|Resolve inter-mod conflicts|feasibility testing|
-|FOMOD XML support|feasibility testing|
-|BSA file handling|feasibility testing|
+|Bulk move mods to specific index|complete|
+|Bulk enable/disable all mods|in development|
+|FOMOD XML support|in development|
 |Command line tab expansion|in development|
-|Mass enable/disable all mods|in development|
-|Bulk move mods to specific index|in development|
+|Resolve inter-mod conflicts|feasibility testing|
+|BSA file handling|feasibility testing|
