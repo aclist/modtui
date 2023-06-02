@@ -50,7 +50,8 @@ add(){
 		[[ -z $(ls -A "$mod") ]] && { echo "Mod path is empty"; continue; }
 		[[ -d "$mod" ]] && break
 	done
-	test_upper "$path" "$mod"
+		test_upper "$path"
+		#find "$path" -maxdepth 1 -type d > "$modtui_state/$name.rollback"
 	while true; do
 		read -e -p "Wine prefix: " prefix
 		prefix=$(<<< "$prefix" envsubst)
@@ -89,7 +90,7 @@ clean(){
 	[[ $? -eq 1 ]] && return 1
 	local dir=$(< "$modtui_conf" jq -r --arg name "$name" '.games[]|select(.name==$name).game_path')
 	[[ ! -d $dir ]] && { logger ERROR "Path '$dir' no longer exists"; return 1; }
-	"$modtui_lib/link" clean "$dir" loud
+	"$modtui_lib/link" clean "$dir" loud "$name"
 }
 convert(){
 	logger INFO "Entering mode '${FUNCNAME[0]}'" loud
@@ -317,7 +318,7 @@ test_missing(){
 	readarray -t ldirs < <(ls -d "$modpath"/*/ | sed 's/\/$//g')
 	local cdirs=$(for i in "${ldirs[@]}"; do echo "${i#$modpath/}"; done)
 	local known_mods=$(< $modtui_path/$name.json jq -r '.mods[]|select(.dir!=null).dir' | sort)
-	local new_mods=$(comm -23 <(echo "$cdirs") <(echo "$known_mods"))
+	local new_mods=$(comm -23 <(echo "$cdirs" | grep -v _separator) <(echo "$known_mods"))
 	local missing_mods=$(comm -13 <(echo "$cdirs") <(echo "$known_mods"))
 	if [[ -n $new_mods ]]; then
 		logger INFO "Found new mods not present in config, adding" loud
