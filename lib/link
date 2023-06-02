@@ -51,8 +51,8 @@ walk_tree(){
 	tput civis
 	export modroot="$1"
 	export longmodpath="$2"
-	local it="$3"
-	local total="$4"
+	export it="$3"
+	export total="$4"
 	[[ ! -d "$modroot" ]] && { logger WARN "Invalid path: '$path'" silent; let warn++; return 1; }
 	if [[ $longmodpath =~ /SELF= ]]; then
 		local ep="${longmodpath#*SELF=}"
