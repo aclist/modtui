@@ -211,6 +211,8 @@ edit_notes(){
 move_bulk(){
 	local ind=$1
 	local dest=$2
+	local re='^[0-9]+$'
+	[[ ! $dest =~ $re ]] && { redraw; return; }
 	if [[ $dest -lt $ind ]]; then
 		delind=$((ind+1))
 	else

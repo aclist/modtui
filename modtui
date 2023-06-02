@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-version=0.2.0
+version=0.2.1
 tool=modtui
 [[ -n $XDG_USER_HOME ]] && conf="$XDG_USER_HOME/$tool" || conf="$HOME/.config/$tool"
 [[ -n $XDG_STATE_HOME ]] && state="$XDG_STATE_HOME/$tool" || state="$HOME/.local/state/$tool"
