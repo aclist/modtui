@@ -1,0 +1,15 @@
+info.xml = base metadata
+
+moduleconfig.xml = paths
+
+xmllint --xpath "count(//installStep)" moduleconfig.xml
+
+name=$(xmlstarlet sel -t -v '//Name' info.xml)
+author=$(xmlstarlet sel -t -v '//Author' info.xml)
+version=$(xmlstarlet sel -t -v '//Version' info.xml)
+desc=$(xmlstarlet sel -t -v '//Description' info.xml)
+xmllint --xpath "string(//group/@name)" moduleconfig.xml
+
+xmllint --xpath "string(//group[1]/@name)" moduleconfig.xml
+xmllint --xpath "//group[1]/plugins/plugin" moduleconfig.xml | less
+xmllint --xpath "string(//installStep[3]/@name)" moduleconfig.xml | less
